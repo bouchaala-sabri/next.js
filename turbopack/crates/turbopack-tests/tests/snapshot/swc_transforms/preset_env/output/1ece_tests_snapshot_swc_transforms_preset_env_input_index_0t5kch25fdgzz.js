@@ -1115,6 +1115,9 @@ function _unsupported_iterable_to_array(o, minLen) {
 }
 var browserContextPrototype = Context.prototype;
 var RUNTIME_CHUNK_BASE_PATH = typeof TURBOPACK_CHUNK_BASE_PATH === 'string' ? TURBOPACK_CHUNK_BASE_PATH : CHUNK_BASE_PATH;
+// The load caches below dedupe in-flight and successful loads. A failed load must not stay
+// cached, or every later load of the same chunk would reuse the rejection without requesting
+// the chunk again, so entries are added with `cacheLoadPromise`.
 var availableModules = new Map();
 var availableModuleChunks = new Map();
 // Registry mapping a merged chunk's path to its constituent component chunk paths.
@@ -1129,6 +1132,17 @@ function registerComponentChunkSizes(componentChunks, sizes) {
             componentChunkSizes.set(componentChunks[i], size);
         }
     }
+}
+/**
+ * Caches `promise` under `key` and evicts it again if it rejects, so a later load retries
+ * instead of reusing the failure. The entry is only removed if it still holds `promise`.
+ */ function cacheLoadPromise(cache, key, promise) {
+    cache.set(key, promise);
+    promise.catch(function() {
+        if (cache.get(key) === promise) {
+            cache.delete(key);
+        }
+    });
 }
 // Memoizes the composite promise returned for a merged chunk loaded by URL, keyed by URL.
 var splitChunkPromises = new Map();
@@ -1191,7 +1205,7 @@ function loadChunkInternal(sourceType, sourceData, chunkData) {
                             if (!availableModules.has(included)) {
                                 // It might be better to race old and new promises, but it's rare that the new promise will be faster than a request started earlier.
                                 // In production it's even more rare, because the chunk optimization tries to deduplicate modules anyway.
-                                availableModules.set(included, promise);
+                                cacheLoadPromise(availableModules, included, promise);
                             }
                         }
                     } catch (err) {
@@ -1286,7 +1300,7 @@ function loadChunkInternal(sourceType, sourceData, chunkData) {
                 var componentChunk1 = _step1.value;
                 if (!availableModuleChunks.has(componentChunk1)) {
                     var promise = loadChunkPath(sourceType, sourceData, componentChunk1);
-                    availableModuleChunks.set(componentChunk1, promise);
+                    cacheLoadPromise(availableModuleChunks, componentChunk1, promise);
                     componentChunkPromises.push(promise);
                 }
             }
@@ -1314,7 +1328,7 @@ function loadChunkInternal(sourceType, sourceData, chunkData) {
         for(var _iterator2 = componentChunks[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true){
             var componentChunk2 = _step2.value;
             if (!availableModuleChunks.has(componentChunk2)) {
-                availableModuleChunks.set(componentChunk2, promise1);
+                cacheLoadPromise(availableModuleChunks, componentChunk2, promise1);
             }
         }
     } catch (err) {
@@ -1369,7 +1383,7 @@ function loadChunkByUrlInternal(sourceType, sourceData, chunkEntry) {
             var promise = splitChunkPromises.get(chunkUrl);
             if (promise === undefined) {
                 promise = loadComponentChunksOrWhole(sourceType, sourceData, components, chunkUrl);
-                splitChunkPromises.set(chunkUrl, promise);
+                cacheLoadPromise(splitChunkPromises, chunkUrl, promise);
             }
             return promise;
         }
@@ -1381,7 +1395,7 @@ function loadChunkByUrlInternal(sourceType, sourceData, chunkEntry) {
             return existing === true ? loadedChunk : existing;
         }
         var promise1 = loadChunkByUrlWhole(sourceType, sourceData, chunkUrl);
-        availableModuleChunks.set(chunkPath, promise1);
+        cacheLoadPromise(availableModuleChunks, chunkPath, promise1);
         return promise1;
     }
     // Component chunks are disabled, so the chunking context never emits merged arrays and every
