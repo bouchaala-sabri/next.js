@@ -1,11 +1,10 @@
-(globalThis["TURBOPACK"] || (globalThis["TURBOPACK"] = [])).push(["output/1jsg_tests_snapshot_scope-hoisting_import-meta-glob_input_index_1fxkqkb82hzw0.js",
-"[project]/turbopack/crates/turbopack-tests/tests/snapshot/scope-hoisting/import-meta-glob/input/index.js [test] (ecmascript)", ((__turbopack_context__) => {
+(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["output/1jsg_tests_snapshot_scope-hoisting_import-meta-glob_input_index_1fxkqkb82hzw0.js","[project]/turbopack/crates/turbopack-tests/tests/snapshot/scope-hoisting/import-meta-glob/input/index.js [test] (ecmascript)",((__turbopack_context__) => {
 "use strict";
 
 __turbopack_context__.s([], "[project]/turbopack/crates/turbopack-tests/tests/snapshot/scope-hoisting/import-meta-glob/input/index.js [test] (ecmascript)");
 // MERGED MODULE: [project]/turbopack/crates/turbopack-tests/tests/snapshot/scope-hoisting/import-meta-glob/input/index.js [test] (ecmascript)
 ;
-// MERGED MODULE: [project]/turbopack/crates/turbopack-tests/tests/snapshot/scope-hoisting/import-meta-glob/input/index.js.import-meta-glob.mjs [test] (import.meta.glob ./dir/*.js eager import=value, ecmascript)
+// MERGED MODULE: [project]/turbopack/crates/turbopack-tests/tests/snapshot/scope-hoisting/import-meta-glob/input/index.js.import-meta-glob.mjs { calling module => "[project]/turbopack/crates/turbopack-tests/tests/snapshot/scope-hoisting/import-meta-glob/input/index.js" } [test] (import.meta.glob ./dir/*.js eager import=value, ecmascript)
 ;
 // MERGED MODULE: [project]/turbopack/crates/turbopack-tests/tests/snapshot/scope-hoisting/import-meta-glob/input/dir/a.js [test] (ecmascript)
 ;
@@ -36,7 +35,6 @@ var __TURBOPACK__import$2e$meta__ = {
 const modules = __TURBOPACK__default__export__;
 console.log(modules);
 ;
-}),
-]);
+})]);
 
 //# sourceMappingURL=1jsg_tests_snapshot_scope-hoisting_import-meta-glob_input_index_1fxkqkb82hzw0.js.map
