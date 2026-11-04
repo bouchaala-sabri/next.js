@@ -85,6 +85,17 @@ function transformBufferInDevelopment(
 }
 
 describe('imageOptimizerTransform', () => {
+  it('only exposes the public API', () => {
+    expect(
+      Object.keys(require('next/image-optimizer-transform')).sort()
+    ).toEqual([
+      'ImageError',
+      'getMaxAge',
+      'getSharp',
+      'imageOptimizerTransform',
+    ])
+  })
+
   it('loads without the server image optimizer dependency graph', () => {
     const loaded = Object.keys(require.cache)
     expect(
