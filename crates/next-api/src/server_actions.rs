@@ -48,8 +48,9 @@ use turbopack_core::{
     ident::AssetIdent,
     module::{Module, Modules},
     module_graph::{
-        GraphTraversalAction, ModuleGraph, ModuleGraphLayer, async_module_info::AsyncModulesInfo,
-        binding_usage_info::ModuleExportUsage, chunk_group_info::ChunkGroup,
+        GraphTraversalAction, ModuleGraph, ModuleGraphLayer, SingleModuleGraphNode,
+        async_module_info::AsyncModulesInfo, binding_usage_info::ModuleExportUsage,
+        chunk_group_info::ChunkGroupKey,
     },
     output::{OutputAsset, OutputAssets, OutputAssetsReference},
     reference_type::{EcmaScriptModulesReferenceSubType, ReferenceType},
@@ -151,7 +152,9 @@ pub(crate) async fn build_server_actions_loader(
         )?;
     }
 
-    let path = project_path.join(&format!(".next-internal/server/app{page_name}/actions.js"))?;
+    // NOTE: use .mjs so that ESM syntax is valid even if package.json specifies `"type":
+    // "commonjs"`
+    let path = project_path.join(&format!(".next-internal/server/app{page_name}/actions.mjs"))?;
     let file = File::from(contents.build());
     let source = VirtualSource::new_with_ident(
         AssetIdent::from_path(path)
@@ -1037,13 +1040,20 @@ pub struct AllModuleActions(
 pub async fn map_server_actions(
     graph: OperationVc<ModuleGraphLayer>,
 ) -> Result<Vc<AllModuleActions>> {
-    let graph = graph.connect();
+    let graph = graph.connect().await?;
     let actions = graph
-        .await?
-        .iter_reachable_modules()?
-        .map(async |module| {
+        .iter_reachable_nodes()?
+        .map(async |(idx, node)| {
+            let SingleModuleGraphNode::Module(module) = node else {
+                // VisitedModule nodes were handled in their owning graph.
+                return Ok(None);
+            };
+            let ident = graph
+                .node_ident(idx)
+                .context("Module nodes always have an ident")?;
             // TODO: compare module contexts instead?
-            let layer = match module.ident().await?.layer.as_ref() {
+            let ident = ident.await?;
+            let layer = match ident.layer.as_ref() {
                 Some(layer)
                     if layer.name() == "app-rsc"
                         || layer.name() == "app-edge-rsc"
@@ -1058,9 +1068,9 @@ pub async fn map_server_actions(
             };
             // TODO the old implementation did parse_actions(to_rsc_context(module))
             // is that really necessary?
-            Ok(parse_actions(*module)
+            Ok(parse_actions(**module)
                 .await?
-                .map(|action_map| (module, (layer, action_map))))
+                .map(|action_map| (*module, (layer, action_map))))
         })
         .try_flat_join()
         .await?;
@@ -1240,7 +1250,7 @@ impl ChunkingContext for UseCacheContentHashChunkingContext {
     async fn chunk_group(
         self: Vc<Self>,
         _ident: Vc<AssetIdent>,
-        _chunk_groups: SmallVec<[ChunkGroup; 1]>,
+        _chunk_groups: SmallVec<[ChunkGroupKey; 1]>,
         _module_graph: ResolvedVc<ModuleGraph>,
         _availability_info: AvailabilityInfo,
     ) -> Result<Vc<ChunkGroupResult>> {
@@ -1251,7 +1261,7 @@ impl ChunkingContext for UseCacheContentHashChunkingContext {
     async fn evaluated_chunk_group(
         self: Vc<Self>,
         _ident: Vc<AssetIdent>,
-        _chunk_group: ChunkGroup,
+        _chunk_group: ChunkGroupKey,
         _module_graph: ResolvedVc<ModuleGraph>,
         _extra_chunks: Vc<OutputAssets>,
         _input_availability_info: AvailabilityInfo,
@@ -1273,7 +1283,7 @@ impl ChunkingContext for UseCacheContentHashChunkingContext {
     async fn entry_chunk_group(
         self: Vc<Self>,
         _path: FileSystemPath,
-        _chunk_group: ChunkGroup,
+        _chunk_group: ChunkGroupKey,
         _module_graph: ResolvedVc<ModuleGraph>,
         _extra_chunks: Vc<OutputAssets>,
         _extra_referenced_assets: Vc<OutputAssets>,

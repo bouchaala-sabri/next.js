@@ -508,7 +508,22 @@ contextPrototype.r = commonJsRequire;
 }
 /**
  * `require.context` and require/import expression runtime.
- */ function moduleContext(map) {
+ */ function moduleContext(mapOrIds) {
+    let map;
+    if (Array.isArray(mapOrIds)) {
+        const parentModule = this.m;
+        map = {};
+        for(let i = 0; i < mapOrIds.length; i += 2){
+            const id = mapOrIds[i + 1];
+            map[mapOrIds[i]] = {
+                id: ()=>id,
+                // inlined require implementation, which gives an ignored module empty exports
+                module: ()=>id === undefined ? {} : getOrInstantiateModuleFromParent(id, parentModule).exports
+            };
+        }
+    } else {
+        map = mapOrIds;
+    }
     function moduleContext(id) {
         id = parseRequest(id);
         if (hasOwnProperty.call(map, id)) {
@@ -818,27 +833,60 @@ function loadChunkAsync(chunkData) {
     }
     let entry = chunkCache.get(chunkPath);
     if (entry === undefined) {
-        try {
-            // resolve to an absolute path to simplify `require` handling
-            const resolved = path.resolve(RUNTIME_ROOT, chunkPath);
-            // TODO: consider switching to `import()` to enable concurrent chunk loading and async file io
-            // However this is incompatible with hot reloading (since `import` doesn't use the require cache)
-            const chunkModules = require(resolved);
-            installCompressedModuleFactories(chunkModules, 0);
-            entry = loadedChunk;
-        } catch (cause) {
-            const errorMessage = `Failed to load chunk ${chunkPath} from module ${this.m.id}`;
-            const error = new Error(errorMessage, {
-                cause
+        const sourceModuleId = this.m.id;
+        // `ensureChunk` is conditionally installed to support lazy dynamic imports during SSR
+        // It can be used to call back into turbopack to compile the chunk we are about to reference.
+        const ensureChunk = globalThis.__turbopack_ensure_chunk__;
+        let ensuring = undefined;
+        if (ensureChunk !== undefined) {
+            try {
+                // Returns `undefined` when the chunk can be required right away.
+                ensuring = ensureChunk(chunkPath);
+            } catch (error) {
+                // Don't cache a failure to compile the chunk, so that the next load
+                // retries it.
+                return Promise.reject(error);
+            }
+        }
+        if (ensuring === undefined) {
+            entry = requireChunk(chunkPath, sourceModuleId);
+        } else {
+            // The chunk is being compiled on demand before it can be required.
+            // Cache the combined promise right away so that every caller (including
+            // concurrent ones) gets the same promise for this chunk.
+            const ensured = Promise.resolve(ensuring).then(()=>requireChunk(chunkPath, sourceModuleId), (error)=>{
+                // Don't cache a failure to compile the chunk, so that the next load
+                // retries it.
+                if (chunkCache.get(chunkPath) === ensured) {
+                    chunkCache.delete(chunkPath);
+                }
+                throw error;
             });
-            error.name = 'ChunkLoadError';
-            // Cache the failure promise, future requests will also get this same rejection
-            entry = Promise.reject(error);
+            entry = ensured;
         }
         chunkCache.set(chunkPath, entry);
     }
     // TODO: Return an instrumented Promise that React can use instead of relying on referential equality.
     return entry;
+}
+function requireChunk(chunkPath, sourceModuleId) {
+    try {
+        // resolve to an absolute path to simplify `require` handling
+        const resolved = path.resolve(RUNTIME_ROOT, chunkPath);
+        // TODO: consider switching to `import()` to enable concurrent chunk loading and async file io
+        // However this is incompatible with hot reloading (since `import` doesn't use the require cache)
+        const chunkModules = require(resolved);
+        installCompressedModuleFactories(chunkModules, 0);
+        return loadedChunk;
+    } catch (cause) {
+        const errorMessage = `Failed to load chunk ${chunkPath} from module ${sourceModuleId}`;
+        const error = new Error(errorMessage, {
+            cause
+        });
+        error.name = 'ChunkLoadError';
+        // Cache the failure promise, future requests will also get this same rejection
+        return Promise.reject(error);
+    }
 }
 contextPrototype.l = loadChunkAsync;
 function loadChunkAsyncByUrl(chunkUrl) {
